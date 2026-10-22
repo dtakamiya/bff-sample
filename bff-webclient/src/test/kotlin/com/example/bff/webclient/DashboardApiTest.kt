@@ -1,9 +1,10 @@
 package com.example.bff.webclient
 
-import com.example.bff.webclient.model.DashboardResponse
-import com.example.bff.webclient.model.ErrorBody
+import com.example.bff.webclient.presentation.dto.DashboardResponse
+import com.example.bff.webclient.presentation.dto.ErrorBody
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -56,6 +57,14 @@ class DashboardApiTest {
 
         assertEquals(HTTP_NOT_FOUND, response.statusCode())
         assertEquals("user not found: $UNKNOWN_ID", errorOf(response))
+    }
+
+    @Test
+    fun `returns 404 when the path user id is blank`() {
+        val response = get("/api/dashboard/%20")
+
+        assertEquals(HTTP_NOT_FOUND, response.statusCode())
+        assertTrue(errorOf(response).startsWith("user not found"))
     }
 
     @Test
