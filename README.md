@@ -1,28 +1,34 @@
 # bff-sample
 
-同じ API を異なる呼び出し方式で実装した 3 つの BFF（Backend For Frontend）を比較するためのサンプルです。
+同じ API を異なる呼び出し方式で実装した 4 つの BFF（Backend For Frontend）を比較するためのサンプルです。
 
-- `bff-webclient`: WebClient + Mono で並列化
+- `bff-webclient`: MVC + WebClient + Mono で並列化（コントローラで `block()` して同期的に返す）
+- `bff-webflux`: WebFlux + WebClient + Mono で並列化（`block()` を使わず、Mono のまま返す）
 - `bff-restclient`: RestClient + 固定スレッドプール + CompletableFuture で並列化
 - `bff-restclient-sequential`: RestClient で逐次呼び出し（スレッドを使わないケース）
 
-3 つとも同じ下流 API（backend-stub）を呼び、同じレスポンスとエラー仕様を返します。負荷計測用の k6 スクリプトと実行スクリプトも含みます。
+4 つとも同じ下流 API（backend-stub）を呼び、同じレスポンスとエラー仕様を返します。4 モジュールとも DDD + オニオンアーキテクチャで、`presentation` / `application` / `domain` / `infrastructure` の層に分けています。負荷計測用の k6 スクリプトと実行スクリプトも含みます。
 
 ## 構成
 
 ```
-                       +------------------------------+
-  client (curl / k6) ─▶| bff-webclient  :8081         |──┐
-                       | MVC + WebClient (Mono.zip)   |  │  GET /users/{id}
-                       +------------------------------+  │  GET /users/{id}/orders
-                       +------------------------------+  │  GET /products/{id}
-  client (curl / k6) ─▶| bff-restclient :8082         |──┤
-                       | MVC + RestClient (CF + pool) |  │
-                       +------------------------------+  │
-                       +------------------------------+  │
-  client (curl / k6) ─▶| bff-restclient-sequential    |──┤
-                       | :8083  MVC + RestClient (逐次)|  │
-                       +------------------------------+  ▼
+                       +----------------------------------+
+  client (curl / k6) ─▶| bff-webclient  :8081             |──┐  GET /users/{id}
+                       | MVC + WebClient (Mono.zip)       |  │  GET /users/{id}/orders
+                       +----------------------------------+  │  GET /products/{id}
+                       +----------------------------------+  │
+  client (curl / k6) ─▶| bff-webflux    :8084             |──┤
+                       | WebFlux + WebClient (Mono.zip)   |  │
+                       +----------------------------------+  │
+                       +----------------------------------+  │
+  client (curl / k6) ─▶| bff-restclient :8082             |──┤
+                       | MVC + RestClient (CF + pool)     |  │
+                       +----------------------------------+  │
+                       +----------------------------------+  │
+  client (curl / k6) ─▶| bff-restclient-sequential :8083  |──┤
+                       | MVC + RestClient (serial)        |  │
+                       +----------------------------------+  │
+                                                             ▼
                                                   +--------------------+
                                                   | backend-stub :9090 |
                                                   +--------------------+
@@ -34,6 +40,7 @@
 | `bff-webclient` | 8081 | BFF（WebClient 版、並列） |
 | `bff-restclient` | 8082 | BFF（RestClient 版、固定スレッドプールで並列） |
 | `bff-restclient-sequential` | 8083 | BFF（RestClient 版、逐次。追加スレッドを使わない） |
+| `bff-webflux` | 8084 | BFF（WebFlux 版、フルリアクティブ。`block()` を使わない） |
 
 共通の API: `GET /api/dashboard/{userId}`
 
@@ -46,10 +53,10 @@
 
 ## 起動方法
 
-ビルド（4 モジュールの bootJar）:
+ビルド（5 モジュールの bootJar: backend-stub と 4 つの BFF）:
 
 ```sh
-./gradlew :backend-stub:bootJar :bff-webclient:bootJar :bff-restclient:bootJar :bff-restclient-sequential:bootJar
+./gradlew :backend-stub:bootJar :bff-webclient:bootJar :bff-restclient:bootJar :bff-restclient-sequential:bootJar :bff-webflux:bootJar
 ```
 
 起動（別々のターミナルで実行）:
@@ -59,6 +66,7 @@ java -jar backend-stub/build/libs/backend-stub.jar
 java -jar bff-webclient/build/libs/bff-webclient.jar
 java -jar bff-restclient/build/libs/bff-restclient.jar
 java -jar bff-restclient-sequential/build/libs/bff-restclient-sequential.jar
+java -jar bff-webflux/build/libs/bff-webflux.jar
 ```
 
 ### curl での確認
@@ -76,13 +84,13 @@ curl -s localhost:9090/users/u1/orders
 curl -s -o /dev/null -w '%{time_total}s\n' 'localhost:9090/users/u1?delayMs=500'
 ```
 
-BFF を叩く（3 つの BFF で同一の応答）:
+BFF を叩く（4 つの BFF で同一の応答）:
 
 ```sh
 curl -s localhost:8081/api/dashboard/u1
 # {"user":{"id":"u1","name":"User u1","tier":"gold"},"orders":[{"orderId":"o1","quantity":2,"product":{"id":"p1","name":"Product p1","price":1200}},{"orderId":"o2","quantity":1,"product":{"id":"p2","name":"Product p2","price":1200}},{"orderId":"o3","quantity":5,"product":{"id":"p3","name":"Product p3","price":1200}}],"totalAmount":9600}
 
-# 8082（restclient）・8083（sequential）も同じ応答
+# 8082（restclient）・8083（sequential）・8084（webflux）も同じ応答
 curl -s localhost:8083/api/dashboard/u1
 
 curl -i localhost:8082/api/dashboard/unknown
@@ -128,23 +136,24 @@ BASE_URL=http://localhost:8083 VUS=50 DURATION=30s k6 run --summary-export out.j
 
 ## 実装比較
 
-コードはすべて `src/main` 配下を読んで記載しています。
+コードはすべて `src/main` 配下を読んで記載しています。表中のファイルパスは、`src/main/kotlin/` 配下の次のディレクトリからの相対パスです: `bff-webclient` は `com/example/bff/webclient/`、`bff-webflux` は `com/example/bff/webflux/`、`bff-restclient` は `com/example/bff/restclient/`、`bff-restclient-sequential` は `com/example/bff/restclient/sequential/`。
 
-| 項目 | bff-webclient | bff-restclient | bff-restclient-sequential |
-|---|---|---|---|
-| 並列化の方式 | `Mono.zip` で user と orders を並列取得。その後 `Flux.fromIterable(...).flatMap` で商品を並列取得し `collectMap` | `CompletableFuture.supplyAsync` で user と orders を並列取得。その後、注文ごとに `supplyAsync` で商品を並列取得 | なし。user → orders → 注文ごとの商品を順に呼ぶ（`service/DashboardService.kt`） |
-| 並列実行先 | Reactor のイベントループ（WebClient の非同期 I/O）。`flatMap` の並列度はコードで指定していない | `DownstreamConfig.downstreamExecutor`（`Executors.newFixedThreadPool(downstream.parallelism)`、既定 32）。全リクエストで共有 | 使わない。追加のスレッドプールはない |
-| リクエストスレッド | MVC のリクエストスレッドが `block()` で完了まで待機（`web/DashboardController.kt`） | MVC のリクエストスレッドが `join()` で完了まで待機（`service/DashboardService.kt` の `await`） | MVC のリクエストスレッドが各下流呼び出しを同期的に実行する。待機は呼び出しごとに発生する |
-| 下流呼び出しのスレッド | Reactor Netty のスレッド（非ブロッキング） | 固定プールのスレッドが同期的な `RestClient` 呼び出しでブロック | リクエストスレッド（同期的な `RestClient` 呼び出し） |
-| 下流呼び出しの回数 | 2 + 商品の種類数（distinct） | 2 + 注文数（商品は重複して呼ぶ） | 2 + 注文数（商品は重複して呼ぶ） |
-| タイムアウトの設定箇所 | `client/DownstreamClient.kt` の各 `Mono` に `.timeout(timeout)`。値は `config/DownstreamProperties.kt`（`downstream.timeout-ms`） | `config/DownstreamConfig.kt` の `JdkClientHttpRequestFactory` に connectTimeout と readTimeout を同じ値で設定（`downstream.timeout-ms`） | `config/DownstreamConfig.kt` の `JdkClientHttpRequestFactory` に connectTimeout と readTimeout を同じ値で設定（`downstream.timeout-ms`） |
-| user 失敗と orders 失敗が同時に起きた場合 | 両方の完了を待ってから user の結果を判定。user の 404 が優先 | user を先に `await` する。user が失敗した時点で例外を投げ、orders の完了は待たない。user の 404 が優先 | user を先に呼び、失敗したら orders は呼ばない。user の 404 が優先 |
-| user の 404 | `UserNotFoundException` → 404 | `HttpClientErrorException.NotFound` を `UserNotFoundException` に変換 → 404 | 同左 → 404 |
-| その他の下流失敗（5xx・タイムアウト・商品の 404 を含む） | `DownstreamFailureException` → 502 | `RestClientException` を `DownstreamException` に変換 → 502 | 同左 → 502 |
-| エラーの変換箇所 | `service/DashboardService.kt`（例外生成）、`web/BffExceptionHandler.kt`（HTTP 変換） | `client/DownstreamClient.kt`（例外変換）、`api/GlobalExceptionHandler.kt`（HTTP 変換） | 同左（`client/DownstreamClient.kt`、`api/GlobalExceptionHandler.kt`） |
-| 404 / 502 のボディ | `{"error":"user not found: {id}"}` / `{"error":"downstream service unavailable"}` | 同じ | 同じ |
-| 依存スターター | `spring-boot-starter-webmvc`、`spring-boot-starter-webclient` | `spring-boot-starter-webmvc`、`spring-boot-starter-restclient` | `spring-boot-starter-webmvc`、`spring-boot-starter-restclient` |
-| 実行時の HTTP クライアント | Reactor Netty（`reactor-netty-http` 1.3.7 が解決される） | JDK `HttpClient`（`JdkClientHttpRequestFactory` で設定） | 同左 |
+| 項目 | bff-webclient | bff-webflux | bff-restclient | bff-restclient-sequential |
+|---|---|---|---|---|
+| 集約ロジック | `application/usecase/GetDashboardUseCase.kt` | 同左 | 同左 | 同左 |
+| 並列化の方式 | `Mono.zip` で user と orders を並列取得。その後 `Flux.fromIterable(...).flatMap` で商品を並列取得し `collectMap` | 同左 | `CompletableFuture.supplyAsync` で user と orders を並列取得。その後、注文ごとに `supplyAsync` で商品を並列取得 | なし。user → orders → 注文ごとの商品を順に呼ぶ |
+| 並列実行先 | Reactor のイベントループ（WebClient の非同期 I/O）。`flatMap` の並列度はコードで指定していない | 同左 | `infrastructure/config/DownstreamConfig.kt` の `downstreamExecutor`（`Executors.newFixedThreadPool(downstream.parallelism)`、既定 32）。全リクエストで共有 | 使わない。追加のスレッドプールはない |
+| リクエストスレッド | MVC のリクエストスレッドが `block()` で完了まで待機（`presentation/DashboardController.kt`） | 待たない。コントローラは `Mono<DashboardResponse>` を返し、`block()` を使わない（`presentation/DashboardController.kt`） | MVC のリクエストスレッドが `join()` で完了まで待機（`application/usecase/GetDashboardUseCase.kt` の `await`） | MVC のリクエストスレッドが各下流呼び出しを同期的に実行する。待機は呼び出しごとに発生する |
+| 下流呼び出しのスレッド | Reactor Netty のスレッド（非ブロッキング） | 同左 | 固定プールのスレッドが同期的な `RestClient` 呼び出しでブロック | リクエストスレッド（同期的な `RestClient` 呼び出し） |
+| 下流呼び出しの回数 | 2 + 商品の種類数（distinct） | 同左 | 2 + 注文数（商品は重複して呼ぶ） | 2 + 注文数（商品は重複して呼ぶ） |
+| タイムアウトの設定箇所 | `infrastructure/client/DownstreamClient.kt` の各 `Mono` に `.timeout(timeout)`。値は `infrastructure/config/DownstreamProperties.kt`（`downstream.timeout-ms`） | 同左 | `infrastructure/config/DownstreamConfig.kt` の `JdkClientHttpRequestFactory` に connectTimeout と readTimeout を同じ値で設定（`downstream.timeout-ms`） | 同左 |
+| user 失敗と orders 失敗が同時に起きた場合 | 両方の完了を待ってから user の結果を判定（`settle` で成否を値に包んでから `Mono.zip`）。user の 404 が優先 | 同左 | user を先に `await` する。user が失敗した時点で例外を投げ、orders の完了は待たない。user の 404 が優先 | user を先に呼び、失敗したら orders は呼ばない。user の 404 が優先 |
+| user の 404 | `UserNotFoundException` → 404 | 同左 | `HttpClientErrorException.NotFound` を `UserNotFoundException` に変換 → 404 | 同左 → 404 |
+| その他の下流失敗（5xx・タイムアウト・商品の 404 を含む） | `DownstreamFailureException` → 502 | 同左 | `RestClientException` を `DownstreamException` に変換 → 502 | `DomainException` 以外の `Exception` を `DownstreamException` に変換 → 502 |
+| エラーの変換箇所 | 例外の生成: `infrastructure/client/DownstreamErrorTranslator.kt`（`toUserFailure`）、`domain/exception/DomainException.kt`（`toDomainFailure`）。HTTP 変換: `presentation/BffExceptionHandler.kt` | 同左 | 例外変換: `infrastructure/client/DownstreamErrorTranslator.kt`。HTTP 変換: `presentation/GlobalExceptionHandler.kt` | 同左 |
+| 404 / 502 のボディ | `{"error":"user not found: {id}"}` / `{"error":"downstream service unavailable"}` | 同じ | 同じ | 同じ |
+| 依存スターター | `spring-boot-starter-webmvc`、`spring-boot-starter-webclient` | `spring-boot-starter-webflux`、`spring-boot-starter-webclient` | `spring-boot-starter-webmvc`、`spring-boot-starter-restclient` | 同左 |
+| 実行時の HTTP クライアント | Reactor Netty（`reactor-netty-http` 1.3.7 が解決される） | Reactor Netty（webclient と同じ。バージョンは未確認） | JDK `HttpClient`（`JdkClientHttpRequestFactory` で設定） | 同左 |
 
 ### スレッドを使わないケース（逐次版）
 
@@ -152,21 +161,22 @@ BASE_URL=http://localhost:8083 VUS=50 DURATION=30s k6 run --summary-export out.j
 
 - 追加のスレッドを一切使わず、リクエストスレッド 1 本で user → orders → 注文ごとの商品を順に呼びます。
 - 下流呼び出しは直列なので、BFF の応答時間は個々の呼び出しの時間の合計になります。並列版との差はこの部分に現れます。
-- 並列版（webclient / restclient）との比較では、「並列化の効果」を測る対照（baseline）として扱います。
+- 並列版（webclient / webflux / restclient）との比較では、「並列化の効果」を測る対照（baseline）として扱います。
 
 ### コード量（`wc -l` の実測）
 
-数え方: 各モジュールの `src/main` 配下の全ファイル（`.kt` と `application.yml`）の行数を `wc -l` で合計。
+数え方: `find <module>/src/main -name '*.kt'` で `.kt` ファイルを集め、`wc -l` で数えた（`application.yml` は含めない）。表の値は「コメント込み / コメント・空行を除く」の順。後者は空行と、`//`・`/*`・`/**`・`*` で始まる行を除いた行数。
 
-| 対象 | bff-webclient | bff-restclient | bff-restclient-sequential |
-|---|---|---|---|
-| `src/main` 全体 | 287 行（10 の `.kt` + yml） | 288 行（11 の `.kt` + yml） | 259 行（11 の `.kt` + yml） |
-| `service/DashboardService.kt` | 87 行 | 65 行 | 45 行 |
-| `client/DownstreamClient.kt` | 47 行 | 49 行 | 49 行 |
-| エラーハンドラ | `web/BffExceptionHandler.kt` 30 行 | `api/GlobalExceptionHandler.kt` 29 行 | `api/GlobalExceptionHandler.kt` 29 行 |
-| RestClient / WebClient の設定 | `config/WebClientConfig.kt` 15 行 | `config/DownstreamConfig.kt` 33 行 | `config/DownstreamConfig.kt` 27 行 |
+| 対象 | bff-webclient | bff-webflux | bff-restclient | bff-restclient-sequential |
+|---|---|---|---|---|
+| `.kt` ファイル数 | 19 | 19 | 19 | 19 |
+| `.kt` 全体 | 770 / 418 | 769 / 416 | 783 / 413 | 746 / 409 |
+| `application/usecase/GetDashboardUseCase.kt` | 127 / 68 | 127 / 68 | 127 / 68 | 84 / 53 |
+| `infrastructure/client/DownstreamClient.kt` | 65 / 37 | 64 / 37 | 43 / 23 | 41 / 21 |
+| エラーハンドラ（`presentation/BffExceptionHandler.kt` / `presentation/GlobalExceptionHandler.kt`） | 44 / 24 | 45 / 24 | 46 / 27 | 48 / 25 |
+| 設定（`infrastructure/config/WebClientConfig.kt` / `infrastructure/config/DownstreamConfig.kt`） | 26 / 12 | 31 / 12 | 65 / 29 | 43 / 24 |
 
-参考: `backend-stub` の `src/main` 全体は 172 行。
+参考: `backend-stub` の `.kt` は 325 行（コメント・空行を除くと 138 行）。
 
 ## 負荷比較の結果
 
@@ -182,7 +192,9 @@ BASE_URL=http://localhost:8083 VUS=50 DURATION=30s k6 run --summary-export out.j
 
 注記:
 
-- `bff-restclient` 並列が逐次版より遅い（30.8 vs 48.0 req/s）のは、固定スレッドプール（32 スレッド、全リクエスト共有）でのプール待ちが原因という仮説。これは未検証。
+- `bff-restclient` 並列が逐次版より遅い（30.8 vs 48.0 req/s）のは、固定スレッドプール（32 スレッド、全リクエスト共有）の枯渇が原因という仮説で、追加検証により支持された（各構成 2 回、キュー長は未観測）。
+  - プールサイズ N を変えると RPS は N ÷（5 呼び出し × 0.2 秒）にほぼ一致（N=8 / 32 / 64 で 7.7 / 31.0 / 62.1 req/s）し、N=64 で逐次版を上回った。
+  - 詳細は [docs/bff-selection-guide.md](docs/bff-selection-guide.md) の第 3 章「追加検証: 並列度の影響」を参照。
 - オニオン化（DDD + onion architecture への再構成）の前後の比較はしていない。ここに載せた数値はオニオン化後の各モジュールのもの。
 
 ## Spring Boot 4.1.1 の注意点
