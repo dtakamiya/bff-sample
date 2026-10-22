@@ -8,8 +8,13 @@ import reactor.core.publisher.Mono
 import java.time.Duration
 
 /**
- * Thin WebClient wrapper for the downstream API. Every call is bounded by the configured timeout.
- * Non-2xx responses surface as WebClientResponseException; timeouts as TimeoutException.
+ * 下流 API を呼び出す薄い WebClient ラッパー。
+ *
+ * - 戻り値はすべて Mono のまま返し、ここでは購読しない。HTTP リクエストは購読された時点で初めて飛ぶ（遅延実行）。
+ *   いつ・どの順で呼ぶかは呼び出し側（DashboardService）が決める。
+ * - timeout は「1 回の呼び出しごと」の上限。全体の予算ではない。
+ * - 2xx 以外は WebClientResponseException、タイムアウトは TimeoutException としてエラーシグナルで流れる。
+ *   ここでは例外を変換しない。404 を 404 として扱うか 502 にまとめるかは DashboardService が判断する。
  */
 @Component
 class DownstreamClient(
@@ -18,13 +23,21 @@ class DownstreamClient(
 ) {
     private val timeout: Duration = Duration.ofMillis(properties.timeoutMs)
 
+    /**
+     * ユーザー情報を取得する。ユーザーが存在しない場合は下流が 404 を返す（判定は呼び出し側）。
+     */
     fun fetchUser(userId: String): Mono<UserResponse> =
         webClient.get()
             .uri(USER_PATH, userId)
             .retrieve()
             .bodyToMono<UserResponse>()
+            // timeout は購読から「値または完了」が来るまでの上限。ボディの読み取りも含む。超過時は上流の購読が解除される。
             .timeout(timeout)
 
+    /**
+     * ユーザーの注文一覧を取得する。注文が 0 件の場合は空リストを返す。
+     * 下流が本文なしで応答すると Mono は空（値も error もない）で完了する点に注意。
+     */
     fun fetchOrders(userId: String): Mono<List<OrderResponse>> =
         webClient.get()
             .uri(USER_ORDERS_PATH, userId)
@@ -32,6 +45,10 @@ class DownstreamClient(
             .bodyToMono<List<OrderResponse>>()
             .timeout(timeout)
 
+    /**
+     * 商品詳細を取得する。商品の 404 も含めて、ここでは例外のまま流す。
+     * DashboardService の fetchProducts が一律に DownstreamFailureException（502）へまとめる。
+     */
     fun fetchProduct(productId: String): Mono<ProductResponse> =
         webClient.get()
             .uri(PRODUCT_PATH, productId)
@@ -40,6 +57,7 @@ class DownstreamClient(
             .timeout(timeout)
 
     private companion object {
+        // パスはURIテンプレート。{id} は uri() の引数で埋まる。ホスト部分は WebClientConfig の baseUrl が担う。
         const val USER_PATH = "/users/{id}"
         const val USER_ORDERS_PATH = "/users/{id}/orders"
         const val PRODUCT_PATH = "/products/{id}"
