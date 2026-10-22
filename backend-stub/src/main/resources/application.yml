@@ -1,0 +1,8 @@
+server:
+  port: 9090
+
+stub:
+  delay-ms:
+    users: 200
+    orders: 200
+    products: 200

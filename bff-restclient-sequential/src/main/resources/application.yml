@@ -1,0 +1,6 @@
+server:
+  port: 8083
+
+downstream:
+  base-url: http://localhost:9090
+  timeout-ms: 2000

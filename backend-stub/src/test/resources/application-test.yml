@@ -1,0 +1,5 @@
+stub:
+  delay-ms:
+    users: 0
+    orders: 0
+    products: 0
