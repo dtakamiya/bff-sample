@@ -198,3 +198,5 @@ BASE_URL=http://localhost:8083 VUS=50 DURATION=30s k6 run --summary-export out.j
 - 仮想スレッド（Java 21）を使えば、`RestClient` のようなブロッキング呼び出しをそのまま書きつつ、プラットフォームスレッドの固定プールを減らせる。
 - WebFlux（リアクティブ）は少数のイベントループで I/O を待たずに処理し、型としてリアクティブストリームを通す。`block()` のような呼び出し元のブロックは発生させない設計になる。
 - 仮想スレッドでは「ブロッキングのままスケールさせる」、WebFlux では「非同期の型で最初から書く」という違いがある。
+
+詳細な選び方は [docs/bff-selection-guide.md](docs/bff-selection-guide.md) を参照。
