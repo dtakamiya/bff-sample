@@ -150,6 +150,7 @@ BASE_URL=http://localhost:8083 VUS=50 DURATION=30s k6 run --summary-export out.j
 | user 失敗と orders 失敗が同時に起きた場合 | 両方の完了を待ってから user の結果を判定（`settle` で成否を値に包んでから `Mono.zip`）。user の 404 が優先 | 同左 | user を先に `await` する。user が失敗した時点で例外を投げ、orders の完了は待たない。user の 404 が優先 | user を先に呼び、失敗したら orders は呼ばない。user の 404 が優先 |
 | user の 404 | `UserNotFoundException` → 404 | 同左 | `HttpClientErrorException.NotFound` を `UserNotFoundException` に変換 → 404 | 同左 → 404 |
 | その他の下流失敗（5xx・タイムアウト・商品の 404 を含む） | `DownstreamFailureException` → 502 | 同左 | `RestClientException` を `DownstreamException` に変換 → 502 | `DomainException` 以外の `Exception` を `DownstreamException` に変換 → 502 |
+| 下流が本文なしで応答（空ボディ） | `failIfEmptyBody()` で `DownstreamFailureException` → 502 | 同左 | 戻り値が null → `DownstreamException` → 502 | 同左（null → `DownstreamException` → 502） |
 | エラーの変換箇所 | 例外の生成: `infrastructure/client/DownstreamErrorTranslator.kt`（`toUserFailure`）、`domain/exception/DomainException.kt`（`toDomainFailure`）。HTTP 変換: `presentation/BffExceptionHandler.kt` | 同左 | 例外変換: `infrastructure/client/DownstreamErrorTranslator.kt`。HTTP 変換: `presentation/GlobalExceptionHandler.kt` | 同左 |
 | 404 / 502 のボディ | `{"error":"user not found: {id}"}` / `{"error":"downstream service unavailable"}` | 同じ | 同じ | 同じ |
 | 依存スターター | `spring-boot-starter-webmvc`、`spring-boot-starter-webclient` | `spring-boot-starter-webflux`、`spring-boot-starter-webclient` | `spring-boot-starter-webmvc`、`spring-boot-starter-restclient` | 同左 |
@@ -170,8 +171,8 @@ BASE_URL=http://localhost:8083 VUS=50 DURATION=30s k6 run --summary-export out.j
 | 対象 | bff-webclient | bff-webflux | bff-restclient | bff-restclient-sequential |
 |---|---|---|---|---|
 | `.kt` ファイル数 | 19 | 19 | 19 | 19 |
-| `.kt` 全体 | 770 / 418 | 769 / 416 | 783 / 413 | 746 / 409 |
-| `application/usecase/GetDashboardUseCase.kt` | 127 / 68 | 127 / 68 | 127 / 68 | 84 / 53 |
+| `.kt` 全体 | 779 / 424 | 781 / 423 | 783 / 413 | 746 / 409 |
+| `application/usecase/GetDashboardUseCase.kt` | 123 / 68 | 125 / 68 | 127 / 68 | 84 / 53 |
 | `infrastructure/client/DownstreamClient.kt` | 65 / 37 | 64 / 37 | 43 / 23 | 41 / 21 |
 | エラーハンドラ（`presentation/BffExceptionHandler.kt` / `presentation/GlobalExceptionHandler.kt`） | 44 / 24 | 45 / 24 | 46 / 27 | 48 / 25 |
 | 設定（`infrastructure/config/WebClientConfig.kt` / `infrastructure/config/DownstreamConfig.kt`） | 26 / 12 | 31 / 12 | 65 / 29 | 43 / 24 |

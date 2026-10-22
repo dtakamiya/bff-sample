@@ -29,6 +29,7 @@ class WebClientUserRepository(
             // 変換（ACL）で値オブジェクトの検証に失敗した場合も、この onErrorMap で 502 側に入る。
             .map { response -> response.toDomain() }
             .onErrorMap { error -> error.toUserFailure(id) }
+            .failIfEmptyBody()
 }
 
 /** 注文一覧の取得。失敗は（404 を含め）DownstreamFailureException。注文 0 件は空リスト。 */
@@ -41,6 +42,7 @@ class WebClientOrderRepository(
         downstream.fetchOrders(userId.value)
             .map { responses -> responses.map { response -> response.toDomain() } }
             .onErrorMap { error -> error.toDomainFailure() }
+            .failIfEmptyBody()
 }
 
 /** 商品の取得。失敗は（404 を含め）DownstreamFailureException に集約する。 */
@@ -53,4 +55,5 @@ class WebClientProductRepository(
         downstream.fetchProduct(id.value)
             .map { response -> response.toDomain() }
             .onErrorMap { error -> error.toDomainFailure() }
+            .failIfEmptyBody()
 }

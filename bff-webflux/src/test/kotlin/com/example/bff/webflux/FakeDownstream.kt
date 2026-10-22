@@ -12,6 +12,10 @@ const val BROKEN_ID = "broken"
 const val SLOW_ID = "slow"
 const val SLOW_DELAY_MS = 3000L
 const val FAKE_PRODUCT_PRICE = 1200
+const val EMPTY_USER_ID = "empty-user"
+const val EMPTY_ORDERS_ID = "empty-orders"
+const val EMPTY_PRODUCT_USER_ID = "empty-product"
+const val EMPTY_PRODUCT_ID = "p-empty"
 
 private const val HTTP_OK = 200
 private const val HTTP_NOT_FOUND = 404
@@ -29,11 +33,15 @@ private const val ORDERS_JSON = """[
     {"orderId":"o2","productId":"p2","quantity":1},
     {"orderId":"o3","productId":"p3","quantity":5}
 ]"""
+private const val ORDERS_WITH_EMPTY_PRODUCT_JSON = """[{"orderId":"o9","productId":"$EMPTY_PRODUCT_ID","quantity":1}]"""
+private const val EMPTY_BODY = ""
 private const val ERROR_JSON = """{"error":"%s"}"""
 
 /**
  * Minimal in-process stand-in for the downstream API, built on the JDK HttpServer so no extra test dependency is needed.
  * Ids: UNKNOWN_ID -> 404, BROKEN_ID -> 500 (user only), SLOW_ID -> sleeps SLOW_DELAY_MS before answering.
+ * EMPTY_USER_ID / EMPTY_ORDERS_ID / EMPTY_PRODUCT_ID -> 200 with an empty body (user / orders / product call).
+ * EMPTY_PRODUCT_USER_ID -> its orders reference EMPTY_PRODUCT_ID, so the product call for it gets the empty body.
  */
 class FakeDownstream private constructor(
     private val server: HttpServer,
@@ -78,6 +86,7 @@ class FakeDownstream private constructor(
             return when (id) {
                 UNKNOWN_ID -> Reply(HTTP_NOT_FOUND, ERROR_JSON.format("user not found"))
                 BROKEN_ID -> Reply(HTTP_INTERNAL_ERROR, ERROR_JSON.format("injected failure"))
+                EMPTY_USER_ID -> Reply(HTTP_OK, EMPTY_BODY)
                 else -> Reply(HTTP_OK, USER_JSON.format(id, id))
             }
         }
@@ -86,11 +95,17 @@ class FakeDownstream private constructor(
             sleepIfSlow(id)
             return when (id) {
                 UNKNOWN_ID -> Reply(HTTP_NOT_FOUND, ERROR_JSON.format("user not found"))
+                EMPTY_ORDERS_ID -> Reply(HTTP_OK, EMPTY_BODY)
+                EMPTY_PRODUCT_USER_ID -> Reply(HTTP_OK, ORDERS_WITH_EMPTY_PRODUCT_JSON)
                 else -> Reply(HTTP_OK, ORDERS_JSON)
             }
         }
 
-        private fun productReply(id: String): Reply = Reply(HTTP_OK, PRODUCT_JSON.format(id, id))
+        private fun productReply(id: String): Reply =
+            when (id) {
+                EMPTY_PRODUCT_ID -> Reply(HTTP_OK, EMPTY_BODY)
+                else -> Reply(HTTP_OK, PRODUCT_JSON.format(id, id))
+            }
 
         private fun sleepIfSlow(id: String) {
             if (id == SLOW_ID) {

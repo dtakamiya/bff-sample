@@ -47,8 +47,7 @@ class GetDashboardUseCase(
      * - user と orders は settle で「成功か失敗か」を値に包んでから zip する。素の zip は最初のエラーで残りを
      *   キャンセルするため、どちらの失敗が返るかが到着順に依存してしまう。settle すると両方の完了を待ち、
      *   判定は flatMap 内で決定的に行える。
-     * - 注意: 空の Mono（下流が本文なしで応答した等）は Outcome にならず、そのまま空として流れる。
-     *   その場合は Dashboard が作られず、応答も空になる（空応答を明示的なエラーにはしていない）。
+     * - 下流の空応答（本文なし）はアダプタで DownstreamFailureException（502）に変換済みのため、ここに空の Mono は流れてこない。
      */
     fun execute(userId: UserId): Mono<DashboardResult> =
         Mono.zip(
@@ -94,8 +93,7 @@ class GetDashboardUseCase(
     /**
      * Mono の成功・失敗を Outcome に包む。例外は onErrorResume で値に変換するため、エラーは外へ流れない。
      *
-     * 注意: 空の Mono は成功にも失敗にもならず、空のまま流れる（map も onErrorResume も呼ばれない）。
-     * そのため空応答は settle では救われず、上位の Mono.zip を空にする（execute の注意点を参照）。
+     * 空の Mono は想定しない（下流の空応答はアダプタで失敗に変換済み。execute の注意点を参照）。
      */
     private fun <T : Any> settle(call: Mono<T>): Mono<Outcome<T>> =
         call.map<Outcome<T>> { Outcome.Success(it) }

@@ -73,6 +73,30 @@ class DashboardApiTest {
             .jsonPath("$.error").isEqualTo(DOWNSTREAM_ERROR_MESSAGE)
     }
 
+    @Test
+    fun `returns 502 when the downstream user answers with an empty body`() {
+        get("/api/dashboard/$EMPTY_USER_ID")
+            .expectStatus().isEqualTo(HTTP_BAD_GATEWAY)
+            .expectBody()
+            .jsonPath("$.error").isEqualTo(DOWNSTREAM_ERROR_MESSAGE)
+    }
+
+    @Test
+    fun `returns 502 when the downstream orders answer with an empty body`() {
+        get("/api/dashboard/$EMPTY_ORDERS_ID")
+            .expectStatus().isEqualTo(HTTP_BAD_GATEWAY)
+            .expectBody()
+            .jsonPath("$.error").isEqualTo(DOWNSTREAM_ERROR_MESSAGE)
+    }
+
+    @Test
+    fun `returns 502 when the downstream product answers with an empty body`() {
+        get("/api/dashboard/$EMPTY_PRODUCT_USER_ID")
+            .expectStatus().isEqualTo(HTTP_BAD_GATEWAY)
+            .expectBody()
+            .jsonPath("$.error").isEqualTo(DOWNSTREAM_ERROR_MESSAGE)
+    }
+
     private fun get(path: String): WebTestClient.ResponseSpec =
         WebTestClient.bindToServer()
             .baseUrl("http://localhost:$port")

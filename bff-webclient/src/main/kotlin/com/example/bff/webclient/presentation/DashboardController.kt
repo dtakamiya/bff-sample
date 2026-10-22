@@ -35,7 +35,7 @@ class DashboardController(
     @GetMapping("/{userId}")
     fun getDashboard(@PathVariable("userId") userId: String): DashboardResponse {
         // block() は並列処理が完了するまで MVC スレッドを待たせる。各呼び出しは timeout で打ち切られる。
-        // null が返るのは Mono が空で完了したとき（GetDashboardUseCase.execute の注意点参照）。その場合は 500 になる。
+        // 下流の空応答はアダプタで 502 になるため、ここで null になるのは不変条件違反のみ（その場合は 500）。
         val result = requireNotNull(getDashboardUseCase.execute(toUserId(userId)).block()) {
             "empty dashboard for $userId"
         }

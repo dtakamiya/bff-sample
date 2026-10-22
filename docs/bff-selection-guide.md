@@ -31,8 +31,8 @@
 | リクエストスレッドの扱い | `block()` で完了まで待つ | 待たない（`Mono` を返す） | `join()` で完了まで待つ | 各呼び出しで同期的に待つ |
 | 追加のスレッドプール | なし（Reactor の仕組みを利用） | なし | 固定 32 スレッド（全リクエストで共有） | なし |
 | `src/main` の `.kt` ファイル数 | 19 | 19 | 19 | 19 |
-| `.kt` の行数（コメント・空行を除く） | 418 | 416 | 413 | 409 |
-| `.kt` の行数（コメント込み） | 770 | 769 | 783 | 746 |
+| `.kt` の行数（コメント・空行を除く） | 424 | 423 | 413 | 409 |
+| `.kt` の行数（コメント込み） | 779 | 781 | 783 | 746 |
 | `GetDashboardUseCase.kt`（コメント・空行を除く） | 68 行 | 68 行 | 68 行 | 53 行 |
 | 学習コスト（筆者の見立て。未測定） | 中〜高（Reactor の理解が必要） | 高（全層がリアクティブ） | 中（非同期の理解とプール設計） | 低 |
 
@@ -167,7 +167,7 @@ flowchart TD
 - 【コード】user と orders は `settle`（成功・失敗を値に包む）してから `Mono.zip` するため、一方が先に失敗しても他方の完了（最大でタイムアウトまで）を待つ。代わりに、どちらが失敗しても判定は決定的で、user の 404 が常に優先される。
 - 【コード】商品は `distinct()` で重複排除してから `flatMap` で並列取得する。`flatMap` の並列度はコードで指定していない（Reactor の既定に従う）。
 - 【コード】タイムアウトは各 `Mono` に `.timeout(Duration)`（既定 2000ms）。
-- 【コード】下流が本文なしで応答するなど `Mono` が空になった場合、`block()` が `null` を返し、`requireNotNull` が例外を投げる。この例外はハンドラの対象外のため 500 になる（restclient 系は同じ状況を 502 にする）。
+- 【コード】下流が本文なしで応答した場合、各リポジトリアダプタ末尾の `failIfEmptyBody()` が `DownstreamFailureException` にして、502 になる（restclient 系と同じ）。コントローラの `requireNotNull` は、アダプタを通った後では `null` にならない前提の防御のみ。
 - 学習面: `Mono.zip` の失敗伝播（最初のエラーで残りをキャンセルする）など、Reactor の挙動を理解する必要がある。このコードに `settle` が入っているのはその対策。
 
 ### 5.4 bff-webflux（WebFlux、フルリアクティブ）
@@ -180,7 +180,7 @@ flowchart TD
 
 落とし穴:
 - 【コード】集約ロジックは webclient 版と同じ（`Mono.zip` + `flatMap`）。差はコントローラが `Mono` を返し、`block()` しない点。
-- 【コード】`Mono` が空になった場合は 500 でも 502 でもなく、空の応答になる（コードのコメントに「空応答を明示的なエラーにはしていない」とある）。実際のステータスは未確認。
+- 【コード】下流が本文なしで応答した場合も、アダプタの `failIfEmptyBody()` で `DownstreamFailureException` になり、502 になる（5.3 と同じ。空の 200 を返すことはない）。
 - 【コード】入力の検証（不正な userId）も `Mono` の中で 404 に変換している（`Mono.fromCallable` + `onErrorMap`）。
 
 ### 5.5 共通のエラー変換（4 方式とも）
@@ -188,12 +188,12 @@ flowchart TD
 | 状況 | 結果 | 【コード】の根拠 |
 |---|---|---|
 | user が下流で 404、または userId が不正 | 404 `{"error":"user not found: <id>"}` | 各 `ErrorTranslator` と例外ハンドラ |
-| 下流の 5xx・タイムアウト・接続失敗 | 502 `{"error":"downstream service unavailable"}` | 同上 |
+| 下流の 5xx・タイムアウト・接続失敗・本文なしの応答 | 502 `{"error":"downstream service unavailable"}` | 同上。本文なしは webclient / webflux が `failIfEmptyBody()`、restclient 系が null 判定で `DownstreamException` にする |
 | orders / 商品が下流で 404 | 502（404 にはならない） | user の 404 だけを `UserNotFoundException` に変換している |
 | user の失敗と orders の失敗が同時 | 404 が優先 | webclient / webflux は `settle` で、restclient は user を先に `await` で、sequential は user を先に呼ぶことで実現 |
 
 - 部分失敗（商品の一部だけ失敗）は、どの方式も一部だけ返さず全体を 502 にする。部分成功を許す設計にはなっていない。
-- 4 方式のタイムアウト・例外の挙動は、本稿では実行して確認していない（コードの読解のみ）。
+- 4 方式のタイムアウト・例外の挙動は、本稿では実行して確認していない（コードの読解のみ）。ただし本文なしの応答の 502 は、webclient / webflux の `DashboardApiTest`（user / orders / 商品の空応答、各 1 ケース）で実行確認した。restclient 系は読解のみ。
 
 ## 6. 本計測の限界と注意
 

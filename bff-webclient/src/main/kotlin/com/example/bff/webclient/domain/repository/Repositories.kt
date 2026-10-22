@@ -5,7 +5,6 @@ import com.example.bff.webclient.domain.model.Product
 import com.example.bff.webclient.domain.model.ProductId
 import com.example.bff.webclient.domain.model.User
 import com.example.bff.webclient.domain.model.UserId
-import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 
 /*

@@ -83,6 +83,30 @@ class DashboardApiTest {
         assertEquals(DOWNSTREAM_ERROR_MESSAGE, errorOf(response))
     }
 
+    @Test
+    fun `returns 502 when the downstream user answers with an empty body`() {
+        val response = get("/api/dashboard/$EMPTY_USER_ID")
+
+        assertEquals(HTTP_BAD_GATEWAY, response.statusCode())
+        assertEquals(DOWNSTREAM_ERROR_MESSAGE, errorOf(response))
+    }
+
+    @Test
+    fun `returns 502 when the downstream orders answer with an empty body`() {
+        val response = get("/api/dashboard/$EMPTY_ORDERS_ID")
+
+        assertEquals(HTTP_BAD_GATEWAY, response.statusCode())
+        assertEquals(DOWNSTREAM_ERROR_MESSAGE, errorOf(response))
+    }
+
+    @Test
+    fun `returns 502 when the downstream product answers with an empty body`() {
+        val response = get("/api/dashboard/$EMPTY_PRODUCT_USER_ID")
+
+        assertEquals(HTTP_BAD_GATEWAY, response.statusCode())
+        assertEquals(DOWNSTREAM_ERROR_MESSAGE, errorOf(response))
+    }
+
     private fun get(path: String): HttpResponse<String> {
         val request = HttpRequest.newBuilder(URI.create("http://localhost:$port$path")).GET().build()
         return http.send(request, HttpResponse.BodyHandlers.ofString())

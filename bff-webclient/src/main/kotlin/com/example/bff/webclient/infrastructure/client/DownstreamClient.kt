@@ -36,7 +36,7 @@ class DownstreamClient(
 
     /**
      * ユーザーの注文一覧を取得する。注文が 0 件の場合は空リストを返す。
-     * 下流が本文なしで応答すると Mono は空（値も error もない）で完了する点に注意。
+     * 下流が本文なしで応答すると Mono は空で完了する。空のままにせず、ACL（failIfEmptyBody）が 502 の失敗に変換する。
      */
     fun fetchOrders(userId: String): Mono<List<OrderResponse>> =
         webClient.get()
