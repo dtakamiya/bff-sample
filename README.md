@@ -101,10 +101,10 @@ scripts/run-compare.sh
 実行内容:
 
 1. k6 の存在確認（無ければ `brew install k6` を促して終了）
-2. ポート 9090 / 8081 / 8082 / 8083 が空いているか確認（使用中なら終了）
-3. `:backend-stub:bootJar` と 3 つの BFF の bootJar をビルド
+2. ポート 9090 / 8081 / 8082 / 8083 / 8084 が空いているか確認（使用中なら終了）
+3. `:backend-stub:bootJar` と 4 つの BFF の bootJar をビルド
 4. backend-stub を起動し、`/users/u1` への curl リトライで起動完了を待つ
-5. BFF を 1 つずつ起動（webclient → restclient → restclient-sequential の順）し、`/api/dashboard/u1` の応答を待ってから k6 で計測。計測後に停止する
+5. BFF を 1 つずつ起動（webclient → restclient → restclient-sequential → webflux の順）し、`/api/dashboard/u1` の応答を待ってから k6 で計測。計測後に停止する
 6. 終了時（正常終了・TERM など）に起動したプロセスを全て停止する
 
 環境変数:
@@ -114,10 +114,11 @@ scripts/run-compare.sh
 | `VUS` | `50` | 同時仮想ユーザー数 |
 | `DURATION` | `30s` | 計測時間 |
 | `SKIP_K6` | 未設定 | `1` にすると k6 を実行せず、ビルド・起動・疎通確認・後始末だけを行う |
+| `K6_SUMMARY_TREND_STATS` | `avg,min,med,max,p(90),p(95),p(99)` | k6 のサマリに出す統計値（k6 が直接読む環境変数） |
 
-結果: `build/load-results/bff-webclient.json`、`build/load-results/bff-restclient.json`、`build/load-results/bff-restclient-sequential.json`（k6 の `--summary-export`）。起動ログは `build/load-logs/` に出力されます。
+結果: `build/load-results/bff-webclient.json`、`build/load-results/bff-restclient.json`、`build/load-results/bff-restclient-sequential.json`、`build/load-results/bff-webflux.json`（k6 の `--summary-export`）。起動ログは `build/load-logs/` に出力されます。
 
-k6 スクリプトだけを単独で実行することもできます（3 つのうち任意の BFF を指定）:
+k6 スクリプトだけを単独で実行することもできます（4 つのうち任意の BFF を指定）:
 
 ```sh
 BASE_URL=http://localhost:8083 VUS=50 DURATION=30s k6 run --summary-export out.json load/dashboard.js
@@ -169,13 +170,20 @@ BASE_URL=http://localhost:8083 VUS=50 DURATION=30s k6 run --summary-export out.j
 
 ## 負荷比較の結果
 
-未計測。`scripts/run-compare.sh` で測定
+条件: VUS=50、DURATION=30s、下流は backend-stub、k6 v2.3.0、計測日 2026-10-22（`scripts/run-compare.sh` で測定）。
 
-| 指標 | bff-webclient | bff-restclient | bff-restclient-sequential |
-|---|---|---|---|
-| p95 レイテンシ | 未計測 | 未計測 | 未計測 |
-| スループット（req/s） | 未計測 | 未計測 | 未計測 |
-| check 成功率（status 200 / totalAmount） | 未計測 | 未計測 | 未計測 |
+| 指標 | bff-webclient(8081) | bff-webflux(8084) | bff-restclient 並列(8082) | bff-restclient-sequential(8083) |
+|---|---|---|---|---|
+| スループット（req/s） | 119.9 | 119.4 | 30.8 | 48.0 |
+| p50 レイテンシ | 413ms | 413ms | 1635ms | 1029ms |
+| p95 レイテンシ | 432ms | 435ms | 1683ms | 1093ms |
+| p99 レイテンシ | 492ms | 467ms | 1823ms | 1212ms |
+| エラー率 | 0% | 0% | 0% | 0% |
+
+注記:
+
+- `bff-restclient` 並列が逐次版より遅い（30.8 vs 48.0 req/s）のは、固定スレッドプール（32 スレッド、全リクエスト共有）でのプール待ちが原因という仮説。これは未検証。
+- オニオン化（DDD + onion architecture への再構成）の前後の比較はしていない。ここに載せた数値はオニオン化後の各モジュールのもの。
 
 ## Spring Boot 4.1.1 の注意点
 
