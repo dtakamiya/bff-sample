@@ -8,6 +8,7 @@ import org.springframework.boot.test.web.server.LocalServerPort
 import org.springframework.test.context.DynamicPropertyRegistry
 import org.springframework.test.context.DynamicPropertySource
 import org.springframework.test.web.reactive.server.WebTestClient
+import java.net.URI
 
 private const val TEST_TIMEOUT_MS = 1000L
 private const val USER_ID = "u1"
@@ -43,6 +44,20 @@ class DashboardApiTest {
     }
 
     @Test
+    fun `returns 404 with the user-not-found body when the user id is whitespace only`() {
+        // uri(String) は % を再エンコードするため、生の %20 を送るには URI を直接渡す。
+        WebTestClient.bindToServer()
+            .baseUrl("http://localhost:$port")
+            .build()
+            .get()
+            .uri(URI.create("http://localhost:$port/api/dashboard/%20"))
+            .exchange()
+            .expectStatus().isNotFound()
+            .expectBody()
+            .jsonPath("$.error").isEqualTo("user not found:  ")
+    }
+
+    @Test
     fun `returns 502 when a downstream call answers with 500`() {
         get("/api/dashboard/$BROKEN_ID")
             .expectStatus().isEqualTo(HTTP_BAD_GATEWAY)
@@ -53,6 +68,30 @@ class DashboardApiTest {
     @Test
     fun `returns 502 when a downstream call exceeds the timeout`() {
         get("/api/dashboard/$SLOW_ID")
+            .expectStatus().isEqualTo(HTTP_BAD_GATEWAY)
+            .expectBody()
+            .jsonPath("$.error").isEqualTo(DOWNSTREAM_ERROR_MESSAGE)
+    }
+
+    @Test
+    fun `returns 502 when the downstream user answers with an empty body`() {
+        get("/api/dashboard/$EMPTY_USER_ID")
+            .expectStatus().isEqualTo(HTTP_BAD_GATEWAY)
+            .expectBody()
+            .jsonPath("$.error").isEqualTo(DOWNSTREAM_ERROR_MESSAGE)
+    }
+
+    @Test
+    fun `returns 502 when the downstream orders answer with an empty body`() {
+        get("/api/dashboard/$EMPTY_ORDERS_ID")
+            .expectStatus().isEqualTo(HTTP_BAD_GATEWAY)
+            .expectBody()
+            .jsonPath("$.error").isEqualTo(DOWNSTREAM_ERROR_MESSAGE)
+    }
+
+    @Test
+    fun `returns 502 when the downstream product answers with an empty body`() {
+        get("/api/dashboard/$EMPTY_PRODUCT_USER_ID")
             .expectStatus().isEqualTo(HTTP_BAD_GATEWAY)
             .expectBody()
             .jsonPath("$.error").isEqualTo(DOWNSTREAM_ERROR_MESSAGE)

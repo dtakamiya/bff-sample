@@ -1,13 +1,14 @@
 #!/usr/bin/env bash
-# 下流スタブ(backend-stub)と3つの BFF を同条件で負荷計測する。
+# 下流スタブ(backend-stub)と4つの BFF を同条件で負荷計測する。
 # BFF は同時に起動せず 1 つずつ直列に測る（公平性のため）。
-#   bff-webclient:8081 / bff-restclient:8082 / bff-restclient-sequential:8083
+#   bff-webclient:8081 / bff-restclient:8082 / bff-restclient-sequential:8083 / bff-webflux:8084
 #
 # 使い方: scripts/run-compare.sh
 # 環境変数:
 #   VUS=50         同時仮想ユーザー数（k6 の vus）
 #   DURATION=30s   計測時間（k6 の duration）
 #   SKIP_K6=1      k6 を実行せず、ビルド・起動・疎通確認・後始末だけを行う
+#   K6_SUMMARY_TREND_STATS  サマリの統計値（既定 avg,min,med,max,p(90),p(95),p(99)。k6 が直接読む）
 # 結果: build/load-results/<module>.json（k6 --summary-export）
 set -euo pipefail
 
@@ -18,7 +19,7 @@ readonly K6_SCRIPT="$PROJECT_DIR/load/dashboard.js"
 
 readonly STUB_MODULE="backend-stub"
 readonly STUB_PORT=9090
-readonly BFF_TARGETS=("bff-webclient:8081" "bff-restclient:8082" "bff-restclient-sequential:8083")
+readonly BFF_TARGETS=("bff-webclient:8081" "bff-restclient:8082" "bff-restclient-sequential:8083" "bff-webflux:8084")
 
 readonly READY_RETRIES=60
 readonly READY_INTERVAL_SEC=1
@@ -27,6 +28,8 @@ readonly DASHBOARD_USER_ID="u1"
 readonly VUS="${VUS:-50}"
 readonly DURATION="${DURATION:-30s}"
 readonly SKIP_K6="${SKIP_K6:-0}"
+# k6 は環境変数 K6_SUMMARY_TREND_STATS を直接読むため、子プロセスに渡せるよう export する。
+export K6_SUMMARY_TREND_STATS="${K6_SUMMARY_TREND_STATS:-avg,min,med,max,p(90),p(95),p(99)}"
 
 STUB_PID=""
 BFF_PID=""
@@ -79,7 +82,8 @@ build_jars() {
     ":$STUB_MODULE:bootJar" \
     ":bff-webclient:bootJar" \
     ":bff-restclient:bootJar" \
-    ":bff-restclient-sequential:bootJar")
+    ":bff-restclient-sequential:bootJar" \
+    ":bff-webflux:bootJar")
 }
 
 jar_path() {

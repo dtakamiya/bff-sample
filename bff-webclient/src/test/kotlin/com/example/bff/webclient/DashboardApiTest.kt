@@ -1,9 +1,10 @@
 package com.example.bff.webclient
 
-import com.example.bff.webclient.model.DashboardResponse
-import com.example.bff.webclient.model.ErrorBody
+import com.example.bff.webclient.presentation.dto.DashboardResponse
+import com.example.bff.webclient.presentation.dto.ErrorBody
 import org.junit.jupiter.api.AfterAll
 import org.junit.jupiter.api.Assertions.assertEquals
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import org.springframework.beans.factory.annotation.Autowired
 import org.springframework.boot.test.context.SpringBootTest
@@ -59,6 +60,14 @@ class DashboardApiTest {
     }
 
     @Test
+    fun `returns 404 when the path user id is blank`() {
+        val response = get("/api/dashboard/%20")
+
+        assertEquals(HTTP_NOT_FOUND, response.statusCode())
+        assertTrue(errorOf(response).startsWith("user not found"))
+    }
+
+    @Test
     fun `returns 502 when a downstream call answers with 500`() {
         val response = get("/api/dashboard/$BROKEN_ID")
 
@@ -69,6 +78,30 @@ class DashboardApiTest {
     @Test
     fun `returns 502 when a downstream call exceeds the timeout`() {
         val response = get("/api/dashboard/$SLOW_ID")
+
+        assertEquals(HTTP_BAD_GATEWAY, response.statusCode())
+        assertEquals(DOWNSTREAM_ERROR_MESSAGE, errorOf(response))
+    }
+
+    @Test
+    fun `returns 502 when the downstream user answers with an empty body`() {
+        val response = get("/api/dashboard/$EMPTY_USER_ID")
+
+        assertEquals(HTTP_BAD_GATEWAY, response.statusCode())
+        assertEquals(DOWNSTREAM_ERROR_MESSAGE, errorOf(response))
+    }
+
+    @Test
+    fun `returns 502 when the downstream orders answer with an empty body`() {
+        val response = get("/api/dashboard/$EMPTY_ORDERS_ID")
+
+        assertEquals(HTTP_BAD_GATEWAY, response.statusCode())
+        assertEquals(DOWNSTREAM_ERROR_MESSAGE, errorOf(response))
+    }
+
+    @Test
+    fun `returns 502 when the downstream product answers with an empty body`() {
+        val response = get("/api/dashboard/$EMPTY_PRODUCT_USER_ID")
 
         assertEquals(HTTP_BAD_GATEWAY, response.statusCode())
         assertEquals(DOWNSTREAM_ERROR_MESSAGE, errorOf(response))
