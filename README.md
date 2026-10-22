@@ -44,6 +44,8 @@
 
 共通の API: `GET /api/dashboard/{userId}`
 
+処理フローは [docs/processing-flow.md](docs/processing-flow.md) を参照。
+
 ## 前提
 
 - Java 17（ルートの `build.gradle.kts` で toolchain 17 を指定）
